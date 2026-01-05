@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <title>Osadníci</title>
+    <style>
+        :root { --accent: #fbbf24; --bg: #0f172a; }
+        body { font-family: system-ui, sans-serif; background: #18181b; color: white; margin: 0; overflow: hidden; }
+        #lobby { position: fixed; inset: 0; background: #18181b; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; }
+        #lobby input { padding: 12px; border-radius: 8px; border: none; margin: 10px; width: 250px; background: #27272a; color: white; border: 1px solid #3f3f46; }
+        #lobby button { width: 250px !important; margin: 10px; }
+
+        #game-layout { display: none; height: 100vh; display: flex; }
+        #map-area { flex: 1; display: flex; align-items: center; justify-content: center; background: var(--bg); position: relative; }
+        #sidebar { width: 360px; background: #1e293b; padding: 15px; border-left: 2px solid #334155; overflow-y: auto; display: flex; flex-direction: column; }
+        
+        .hex { stroke: #fff; stroke-width: 1; cursor: pointer; }
+        .hex-label { pointer-events: none; font-weight: 900; filter: drop-shadow(1px 1px 2px black); }
+        .robber-mark { fill: rgba(0,0,0,0.5); pointer-events: none; }
+        .vertex { fill: rgba(255,255,255,0.05); cursor: pointer; transition: 0.2s; stroke: transparent; stroke-width: 18; }
+        .vertex:hover { fill: var(--accent); r: 10; }
+        .edge { stroke: rgba(255,255,255,0.05); stroke-width: 14; cursor: pointer; stroke-linecap: round; }
+        
+        .section-title { font-size: 0.75rem; font-weight: 900; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin: 10px 0 5px 0; border-bottom: 1px solid #334155; padding-bottom: 4px; }
+        .my-res-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; margin-bottom: 10px; }
+        .res-item { background: #0f172a; padding: 8px 2px; border-radius: 8px; text-align: center; border: 1px solid #334155; }
+        
+        .player-mini { background: rgba(0,0,0,0.2); padding: 8px; border-radius: 8px; margin-bottom: 6px; border-left: 6px solid transparent; }
+        .mini-res-row { display: flex; gap: 8px; font-size: 0.75rem; margin-top: 4px; color: #cbd5e1; }
+
+        .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 5000; align-items: center; justify-content: center; }
+        .modal-content { background: #1e293b; padding: 25px; border-radius: 20px; border: 2px solid var(--accent); width: 340px; text-align: center; box-shadow: 0 0 50px black; }
+        .card-visual { background: white; color: black; border-radius: 10px; padding: 15px; margin: 15px auto; width: 120px; box-shadow: 0 5px 15px black; }
+        
+        button { width: 100%; padding: 12px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; background: var(--accent); color: #000; margin-top: 5px; }
+        button:disabled { background: #475569; color: #94a3b8; cursor: not-allowed; }
+        
+        #instruction-bar { position: absolute; top: 15px; background: var(--accent); color: #000; padding: 10px 30px; border-radius: 40px; font-weight: 900; z-index: 100; text-align: center; width: 60%; left: 20%; box-shadow: 0 4px 15px rgba(0,0,0,0.4); }
+        .die { width: 40px; height: 40px; background: white; color: black; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; font-weight: bold; margin: 0 4px; }
+        #card-played-overlay { pointer-events: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 6000; display: none; }
+    </style>
+</head>
+<body>
+
+    <div id="lobby"><h1>HEX OSADNÍCI</h1><input type="text" id="nameInput" placeholder="Tvoje jméno"><input type="text" id="roomInput" placeholder="Kód místnosti"><button onclick="join()">VSTOUPIT</button></div>
+
+    <div id="win-modal" class="modal">
+        <div class="modal-content">
+            <h1 style="color:var(--accent); font-size: 3rem; margin: 0;">🏆</h1>
+            <h2 id="winner-name">Hráč vyhrál hru!</h2>
+            <button id="restart-btn" onclick="socket.emit('voteRestart', currentRoom)">HRÁT ZNOVU (<span id="vote-count">0</span>/<span id="total-count">0</span>)</button>
+            <button onclick="location.reload()" style="background:#475569; color:white">DO LOBBY</button>
+        </div>
+    </div>
+
+    <div id="bought-modal" class="modal"><div class="modal-content"><h2 style="color:var(--accent); margin-top:0">ZÍSKAL JSI KARTU!</h2><div class="card-visual"><h3 id="bought-card-name">?</h3><div id="bought-card-icon" style="font-size:3rem"></div></div><p id="bought-card-desc" style="font-size:0.8rem"></p><button onclick="document.getElementById('bought-modal').style.display='none'">ROZUMÍM</button></div></div>
+    <div id="card-played-overlay"><div class="modal-content" style="width:200px"><h3 id="played-by-text" style="color:var(--accent); font-size:0.8rem">ZAHRÁL</h3><div style="font-size:4rem" id="played-icon">⚔️</div><h4 id="played-name" style="margin:5px 0">RYTÍŘ</h4></div></div>
+    <div id="trade-modal" class="modal"><div class="modal-content"><h2 style="color:var(--accent)">OBCHOD S BANKOU</h2><select id="trade-give"><option value="WOOD">🪵 Dřevo</option><option value="BRICK">🧱 Cihla</option><option value="SHEEP">🐑 Ovce</option><option value="WHEAT">🌾 Obilí</option><option value="ORE">🪨 Ruda</option></select><select id="trade-get"><option value="WOOD">🪵 Dřevo</option><option value="BRICK">🧱 Cihla</option><option value="SHEEP">🐑 Ovce</option><option value="WHEAT">🌾 Obilí</option><option value="ORE">🪨 Ruda</option></select><button onclick="executeTrade()">VYMĚNIT</button><button onclick="toggleTrade(false)" style="background:#475569; color:white">ZAVŘÍT</button></div></div>
+    <div id="discard-modal" class="modal"><div class="modal-content"><h2 style="color:#ef4444">Zloděj tě okradl!</h2><p>Odevzdej polovinu karet.</p><h3 id="discard-count">0</h3><div id="discard-list"></div></div></div>
+
+    <div id="game-layout">
+        <div id="map-area"><div id="instruction-bar">Příprava...</div><svg width="850" height="750" id="svg-map"></svg></div>
+        <div id="sidebar">
+            <div class="section-title">Moje suroviny</div>
+            <div id="my-resources" class="my-res-grid"></div>
+            <div class="section-title">Moje akční karty</div>
+            <div style="display:flex; gap:5px; margin-bottom:10px;">
+                <button id="play-knight" onclick="socket.emit('playDevCard',{roomId:currentRoom,type:'KNIGHT'})" style="padding:8px; font-size:0.75rem">⚔️ Rytíř (<span id="c-knight">0</span>)</button>
+                <button id="play-prog" onclick="socket.emit('playDevCard',{roomId:currentRoom,type:'PROGRESS'})" style="padding:8px; font-size:0.75rem">🎁 Pokrok (<span id="c-prog">0</span>)</button>
+            </div>
+            <div style="display:flex; justify-content:center; align-items:center; margin-bottom:10px;"><div class="die" id="die1">1</div><div class="die" id="die2">1</div><div style="font-size:1.4rem; margin-left:10px;">= <b id="dice-sum" style="color:var(--accent)">2</b></div></div>
+            <button id="roll-btn" onclick="roll()">HODIT KOSTKOU</button>
+            <button id="buy-card-btn" onclick="socket.emit('buyDevCard', currentRoom)">KOUPIT KARTU (🪨🌾🐑)</button>
+            <button id="trade-open-btn" onclick="toggleTrade(true)">OBCHODOVAT</button>
+            <button id="pass-btn" onclick="pass()">UKONČIT TAH</button>
+            <div class="section-title">Hráči a Suroviny</div><div id="players-list"></div>
+            <div class="section-title" style="margin-top:auto">Ceník</div>
+            <div style="font-size:0.7rem; color:#94a3b8; background:rgba(0,0,0,0.2); padding:5px; border-radius:5px; margin-bottom:5px; text-align:center">🏠: 🪵🧱🐑🌾 | 🏰: 🪨🪨🪨🌾🌾 | 🛣️: 🪵🧱</div>
+            <div id="game-logs" style="background:#0f172a; padding:8px; font-size:0.75rem; color:#94a3b8; border:1px solid #334155; height:60px; overflow-y:auto"></div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io(); let currentRoom = "";
+        const RES_DATA = { WOOD:{n:'Dřevo',i:'🪵',c:'#166534'}, BRICK:{n:'Cihla',i:'🧱',c:'#991b1b'}, SHEEP:{n:'Ovce',i:'🐑',c:'#3f6212'}, WHEAT:{n:'Obilí',i:'🌾',c:'#854d0e'}, ORE:{n:'Ruda',i:'🪨',c:'#475569'}, DESERT:{n:'Poušť',i:'🏜️',c:'#a16207'} };
+        const DEV_DATA = { KNIGHT:{n:'RYTÍŘ',i:'⚔️',d:'Můžeš pohnout zlodějem.'}, PROGRESS:{n:'POKROK',i:'🎁',d:'Dostaneš 2 náhodné suroviny.'}, POINT:{n:'BOD',i:'🏅',d:'Máš +1 vítězný bod.'} };
+
+        function join() { const n = document.getElementById('nameInput').value; currentRoom = document.getElementById('roomInput').value; if(currentRoom) { socket.emit('joinRoom', { roomId: currentRoom, playerName: n }); document.getElementById('lobby').style.display = 'none'; document.getElementById('game-layout').style.display = 'flex'; } }
+        function roll() { socket.emit('rollDice', currentRoom); }
+        function pass() { socket.emit('passTurn', currentRoom); }
+        function toggleTrade(show) { document.getElementById('trade-modal').style.display = show ? 'flex' : 'none'; }
+        function executeTrade() { const give = document.getElementById('trade-give').value; const get = document.getElementById('trade-get').value; if(give && get && give !== get) { socket.emit('bankTrade', { roomId: currentRoom, give, get }); toggleTrade(false); } }
+
+        // NOVÁ FUNKCE: REFRESH PŘI SMAZÁNÍ MÍSTNOSTI
+        socket.on('roomDestroyed', () => {
+            alert("Místnost byla zrušena (hráč se odpojil).");
+            location.reload();
+        });
+
+        socket.on('cardBoughtInfo', (card) => {
+            const m = document.getElementById('bought-modal');
+            document.getElementById('bought-card-name').innerText = DEV_DATA[card].n;
+            document.getElementById('bought-card-icon').innerText = DEV_DATA[card].i;
+            document.getElementById('bought-card-desc').innerText = DEV_DATA[card].d;
+            m.style.display = 'flex';
+        });
+
+        socket.on('visualCardPlay', (data) => {
+            const ov = document.getElementById('card-played-overlay');
+            document.getElementById('played-by-text').innerText = `${data.player.toUpperCase()} ZAHRÁL`;
+            document.getElementById('played-icon').innerText = DEV_DATA[data.type].i;
+            document.getElementById('played-name').innerText = DEV_DATA[data.type].n;
+            ov.style.display = 'block'; setTimeout(() => { ov.style.display = 'none'; }, 3000);
+        });
+
+        socket.on('gameState', (game) => {
+            const svg = document.getElementById('svg-map'); const me = game.players.find(p => p.id === socket.id); if(!me) return;
+            svg.innerHTML = ""; const R = 72, CX = 425, CY = 375;
+            const coords = [{q:0, r:0}, {q:1, r:0}, {q:1, r:-1}, {q:0, r:-1}, {q:-1, r:0}, {q:-1, r:1}, {q:0, r:1}, {q:2, r:0}, {q:2, r:-1}, {q:2, r:-2}, {q:1, r:-2}, {q:0, r:-2}, {q:-1, r:-1}, {q:-2, r:0}, {q:-2, r:1}, {q:-2, r:2}, {q:-1, r:2}, {q:0, r:2}, {q:1, r:1}];
+            let vMap = {}, eMap = {};
+            game.map.forEach((h, i) => {
+                const c = coords[i]; const x = CX + R * 1.5 * c.q, y = CY + R * Math.sqrt(3) * (c.r + c.q/2);
+                let pts = []; for(let a=0; a<6; a++) { let ang = (Math.PI/3) * a; pts.push({ x: x + R * Math.cos(ang), y: y + R * Math.sin(ang) }); }
+                const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+                poly.setAttribute("points", pts.map(p => `${p.x},${p.y}`).join(" "));
+                poly.setAttribute("fill", RES_DATA[h.type].c); poly.setAttribute("class", "hex");
+                poly.onclick = () => { if (game.waitingForRobber) socket.emit('moveRobber', { roomId: currentRoom, hexId: h.id }); };
+                svg.appendChild(poly);
+                const info = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                info.setAttribute("x", x); info.setAttribute("y", y);
+                info.setAttribute("class", "hex-label"); info.setAttribute("text-anchor", "middle");
+                info.innerHTML = `<tspan x="${x}" dy="-5" font-size="22">${RES_DATA[h.type].i}</tspan><tspan x="${x}" dy="22" font-size="18" fill="white">${h.number || ''}</tspan>`;
+                svg.appendChild(info);
+                if (game.robberHexId === h.id) {
+                    const rShadow = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                    rShadow.setAttribute("cx", x); rShadow.setAttribute("cy", y); rShadow.setAttribute("r", "50"); rShadow.setAttribute("class", "robber-mark"); svg.appendChild(rShadow);
+                    const rIcon = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                    rIcon.setAttribute("x", x); rIcon.setAttribute("y", y + 15);
+                    rIcon.setAttribute("font-size", "45"); rIcon.setAttribute("text-anchor", "middle"); rIcon.textContent = "🦹‍♂️"; svg.appendChild(rIcon);
+                }
+                pts.forEach((p, idx) => {
+                    const vId = `${Math.round(p.x)},${Math.round(p.y)}`;
+                    if(!vMap[vId]) vMap[vId] = { x: p.x, y: p.y, hexes: [], neighbors: new Set() };
+                    vMap[vId].hexes.push(h.id);
+                    vMap[vId].neighbors.add(`${Math.round(pts[(idx+1)%6].x)},${Math.round(pts[(idx+1)%6].y)}`);
+                    vMap[vId].neighbors.add(`${Math.round(pts[(idx+5)%6].x)},${Math.round(pts[(idx+5)%6].y)}`);
+                    const eId = [vId, `${Math.round(pts[(idx+1)%6].x)},${Math.round(pts[(idx+1)%6].y)}`].sort().join("|");
+                    if(!eMap[eId]) eMap[eId] = { x1: p.x, y1: p.y, x2: pts[(idx+1)%6].x, y2: pts[(idx+1)%6].y, v1: vId, v2: `${Math.round(pts[(idx+1)%6].x)},${Math.round(pts[(idx+1)%6].y)}` };
+                });
+            });
+
+            Object.keys(eMap).forEach(id => {
+                const e = eMap[id]; const l = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                l.setAttribute("x1", e.x1); l.setAttribute("y1", e.y1); l.setAttribute("x2", e.x2); l.setAttribute("y2", e.y2);
+                const road = game.roads[id]; if(road) { l.setAttribute("stroke", road.color); l.setAttribute("stroke-width", "12"); l.setAttribute("stroke-linecap", "round"); }
+                else { l.setAttribute("class", "edge"); l.onclick = () => socket.emit('buildRoad', { roomId: currentRoom, edgeId: id, v1: e.v1, v2: e.v2 }); }
+                svg.appendChild(l);
+            });
+            Object.keys(vMap).forEach(id => {
+                const v = vMap[id]; const owner = game.settlements[id];
+                if(owner) {
+                    const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                    const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                    c.setAttribute("cx", v.x); c.setAttribute("cy", v.y); c.setAttribute("fill", owner.color); c.setAttribute("stroke", "#000");
+                    if (owner.type === 'city') { c.setAttribute("r", "22"); const t = document.createElementNS("http://www.w3.org/2000/svg", "text"); t.setAttribute("x", v.x); t.setAttribute("y", v.y + 7); t.setAttribute("font-size", "20"); t.setAttribute("text-anchor", "middle"); t.textContent = "🏰"; g.appendChild(c); g.appendChild(t); }
+                    else { c.setAttribute("r", "16"); c.setAttribute("stroke-width", "2"); c.style.cursor = "pointer"; c.onclick = () => socket.emit('buildSettlement', { roomId: currentRoom, vertexId: id, hexIds: v.hexes, neighbors: Array.from(v.neighbors) }); g.appendChild(c); }
+                    svg.appendChild(g);
+                } else { const c = document.createElementNS("http://www.w3.org/2000/svg", "circle"); c.setAttribute("cx", v.x); c.setAttribute("cy", v.y); c.setAttribute("r", "8"); c.setAttribute("class", "vertex"); c.onclick = () => socket.emit('buildSettlement', { roomId: currentRoom, vertexId: id, hexIds: v.hexes, neighbors: Array.from(v.neighbors) }); svg.appendChild(c); }
+            });
+
+            if (me.discardNeeded > 0) {
+                document.getElementById('discard-modal').style.display = 'flex'; document.getElementById('discard-count').innerText = me.discardNeeded;
+                const dl = document.getElementById('discard-list'); dl.innerHTML = "";
+                Object.keys(me.resources).forEach(r => { if(me.resources[r] > 0) dl.innerHTML += `<button onclick="socket.emit('discardResource', {roomId:currentRoom, resType:'${r}'})">-${RES_DATA[r].i}</button>`; });
+            } else document.getElementById('discard-modal').style.display = 'none';
+
+            const active = game.players[game.turn]; const isMe = active.id === socket.id;
+            document.getElementById('instruction-bar').innerText = game.instruction;
+            document.getElementById('die1').innerText = game.lastDice[0]; document.getElementById('die2').innerText = game.lastDice[1];
+            document.getElementById('dice-sum').innerText = game.lastDice[0] + game.lastDice[1];
+
+            const mr = document.getElementById('my-resources'); mr.innerHTML = "";
+            Object.keys(me.resources).forEach(k => { mr.innerHTML += `<div class="res-item"><div>${RES_DATA[k].i}</div><b>${me.resources[k]}</b></div>`; });
+
+            document.getElementById('c-knight').innerText = me.devCards.KNIGHT;
+            document.getElementById('c-prog').innerText = me.devCards.PROGRESS;
+            document.getElementById('play-knight').disabled = !isMe || me.devCards.KNIGHT <= 0 || game.playedCardThisTurn;
+            document.getElementById('play-prog').disabled = !isMe || me.devCards.PROGRESS <= 0 || game.playedCardThisTurn;
+
+            const pList = document.getElementById('players-list'); pList.innerHTML = "";
+            game.players.forEach(p => {
+                const hasArmy = game.largestArmyHolder === p.id;
+                pList.innerHTML += `<div class="player-mini" style="border-left-color:${p.color}; ${p.id === active.id ? 'background:rgba(251,191,36,0.1)' : ''}"><div style="display:flex; justify-content:space-between"><b>${p.name} ${hasArmy ? '⚔️🎖️' : ''}</b> <span>🏰<b>${p.score}</b></span></div><div class="mini-res-row">🪵${p.resources.WOOD} 🧱${p.resources.BRICK} 🐑${p.resources.SHEEP} 🌾${p.resources.WHEAT} 🪨${p.resources.ORE}</div></div>`;
+            });
+
+            document.getElementById('roll-btn').disabled = !isMe || game.hasRolled || game.phase !== 'PLAYING';
+            document.getElementById('buy-card-btn').disabled = !isMe || !game.hasRolled || (me.resources.ORE<1 || me.resources.WHEAT<1 || me.resources.SHEEP<1);
+            document.getElementById('pass-btn').disabled = !isMe || !game.hasRolled || game.waitingForRobber || game.players.some(p => p.discardNeeded > 0);
+            document.getElementById('game-logs').innerHTML = game.logs.join("<br>");
+
+            // --- OPRAVENÁ LOGIKA TLAČÍTKA RESTART S NULL CHECKEM ---
+            const wm = document.getElementById('win-modal');
+            if (game.winner) {
+                wm.style.display = 'flex';
+                document.getElementById('winner-name').innerText = game.winner + " ovládl ostrov HEX!";
+                
+                const vCount = document.getElementById('vote-count');
+                const tCount = document.getElementById('total-count');
+                const rBtn = document.getElementById('restart-btn');
+
+                if (vCount) vCount.innerText = game.restartVotes.length;
+                if (tCount) tCount.innerText = game.players.length;
+
+                const voted = game.restartVotes.includes(socket.id);
+                if (rBtn) {
+                    rBtn.disabled = voted;
+                    rBtn.innerText = voted ? `ČEKÁ SE NA OSTATNÍ... (${game.restartVotes.length}/${game.players.length})` : `HRÁT ZNOVU (${game.restartVotes.length}/${game.players.length})`;
+                }
+            } else { wm.style.display = 'none'; }
+        });
+    </script>
+</body>
+</html>
