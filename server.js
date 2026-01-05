@@ -77,7 +77,6 @@ io.on('connection', (socket) => {
         updateInstruction(game); io.in(roomId).emit('gameState', game);
     });
 
-    // FUNKCE: PŘI ODPOJENÍ SMAZAT CELOU MÍSTNOST
     socket.on('disconnect', () => {
         if (socket.roomId && rooms[socket.roomId]) {
             delete rooms[socket.roomId];
@@ -220,6 +219,10 @@ io.on('connection', (socket) => {
     socket.on('buildSettlement', ({ roomId, vertexId, hexIds, neighbors }) => {
         const game = rooms[roomId]; const player = game?.players[game.turn];
         if (!game || game.winner || player.id !== socket.id || game.settlements[vertexId]?.type === 'city') return;
+        
+        // OPRAVA: Kontrola subPhase v Setupu
+        if (game.phase.startsWith('SETUP') && game.subPhase !== 'SETTLEMENT') return;
+
         if (game.settlements[vertexId]) {
             if (game.phase === 'PLAYING' && player.resources.ORE >= 3 && player.resources.WHEAT >= 2) {
                 player.resources.ORE -= 3; player.resources.WHEAT -= 2;
@@ -244,6 +247,10 @@ io.on('connection', (socket) => {
     socket.on('buildRoad', ({ roomId, edgeId, v1, v2 }) => {
         const game = rooms[roomId]; const player = game?.players[game.turn];
         if (!game || game.winner || player.id !== socket.id || game.roads[edgeId]) return;
+
+        // OPRAVA: Kontrola subPhase v Setupu
+        if (game.phase.startsWith('SETUP') && game.subPhase !== 'ROAD') return;
+
         const isSetup = game.phase.startsWith('SETUP');
         if (isSetup) { if (v1 !== game.lastBuiltVertex && v2 !== game.lastBuiltVertex) return; }
         else { if (!((game.settlements[v1]?.playerId === player.id) || (game.settlements[v2]?.playerId === player.id) || Object.values(game.roads).some(r => r.playerId === player.id && (r.v1 === v1 || r.v1 === v2 || r.v2 === v1 || r.v2 === v2)))) return; }
