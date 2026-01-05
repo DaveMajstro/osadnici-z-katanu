@@ -5,7 +5,8 @@
     <title>Osadníci</title>
     <style>
         :root { --accent: #fbbf24; --bg: #0f172a; }
-        body { font-family: system-ui, sans-serif; background: #18181b; color: white; margin: 0; overflow: hidden; }
+        /* OPRAVA FONTU PRO WINDOWS 10 (Emoji kompatibilita) */
+        body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Apple Color Emoji", "Segoe UI Emoji", sans-serif; background: #18181b; color: white; margin: 0; overflow: hidden; }
         #lobby { position: fixed; inset: 0; background: #18181b; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; }
         #lobby input { padding: 12px; border-radius: 8px; border: none; margin: 10px; width: 250px; background: #27272a; color: white; border: 1px solid #3f3f46; }
         #lobby button { width: 250px !important; margin: 10px; }
@@ -92,7 +93,6 @@
         function toggleTrade(show) { document.getElementById('trade-modal').style.display = show ? 'flex' : 'none'; }
         function executeTrade() { const give = document.getElementById('trade-give').value; const get = document.getElementById('trade-get').value; if(give && get && give !== get) { socket.emit('bankTrade', { roomId: currentRoom, give, get }); toggleTrade(false); } }
 
-        // NOVÁ FUNKCE: REFRESH PŘI SMAZÁNÍ MÍSTNOSTI
         socket.on('roomDestroyed', () => {
             alert("Místnost byla zrušena (hráč se odpojil).");
             location.reload();
@@ -137,7 +137,9 @@
                     rShadow.setAttribute("cx", x); rShadow.setAttribute("cy", y); rShadow.setAttribute("r", "50"); rShadow.setAttribute("class", "robber-mark"); svg.appendChild(rShadow);
                     const rIcon = document.createElementNS("http://www.w3.org/2000/svg", "text");
                     rIcon.setAttribute("x", x); rIcon.setAttribute("y", y + 15);
-                    rIcon.setAttribute("font-size", "45"); rIcon.setAttribute("text-anchor", "middle"); rIcon.textContent = "🦹‍♂️"; svg.appendChild(rIcon);
+                    rIcon.setAttribute("font-size", "45"); rIcon.setAttribute("text-anchor", "middle"); 
+                    rIcon.textContent = "👤"; // OPRAVA PRO WINDOWS 10 (Bezpečné emoji)
+                    svg.appendChild(rIcon);
                 }
                 pts.forEach((p, idx) => {
                     const vId = `${Math.round(p.x)},${Math.round(p.y)}`;
@@ -199,7 +201,7 @@
             document.getElementById('pass-btn').disabled = !isMe || !game.hasRolled || game.waitingForRobber || game.players.some(p => p.discardNeeded > 0);
             document.getElementById('game-logs').innerHTML = game.logs.join("<br>");
 
-            // --- OPRAVENÁ LOGIKA TLAČÍTKA RESTART S NULL CHECKEM ---
+            // --- OPRAVENÁ LOGIKA TLAČÍTKA RESTART S BEZPEČNOSTNÍ KONTROLOU ---
             const wm = document.getElementById('win-modal');
             if (game.winner) {
                 wm.style.display = 'flex';
